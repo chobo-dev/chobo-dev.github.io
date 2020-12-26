@@ -1,0 +1,115 @@
+---
+layout: post
+title:  "JPA N + 1 문제 원인과 해결"
+date:   2020-12-04 22:31:12 +0900
+categories: 개발
+---
+# JPA N + 1 문제
+
+n+1 문제에 대해 한번 정리해봅시다.
+
+JPA 를 쓰는 초개는 잘은 모르지만 쿼리 추상화가 잘되어있는듯한 이 패러다임(?) 에 감탄했던 기억이 난다.
+
+처음 리뷰에 n+1 이 일어날것같다는 리뷰를 보기전까지는 말이다.
+
+우선 n+1 이라는 이름이 붙여진 이유를 내가 이해하기로는 이렇다.
+
+### *n개의 쿼리만을 가지고 충분히 조회할것을 또 하나의 불필요한 n번 쿼리가 한번 더 발생해서 n+1.*
+
+~~아니 그럼 n+1 이 아니라 2n 아닌가?~~
+
+규모가 큰 테이블에서는 n+1 문제가 db에 상당한 부하를 일으킬 수 있기 때문에 반드시 최적화 해야하는 문제 중 하나다.
+
+아래의 케이스를 보면서 생각해보자.
+
+RankGame 은 경쟁전 한판의 기록을 쌓고있다.
+
+heroes 는 그 경쟁전에 참여한 영웅들에 대한 정보다.
+
+경쟁전과 영웅은 1:N 관계이다.
+
+
+```java
+/**
+ * 경쟁전에 대한 엔티티
+ */
+@Entity
+public class RankGame {
+    
+    @Id
+    @GeneratedValue
+    private Long id;
+
+    /** 참여한 영웅 목록. */
+    @OneToMany
+    private List<Hero> heroes;
+
+}
+```
+
+```java
+/**
+ * 영웅에 대한 엔티티
+ */
+@Entity
+public class Hero {
+    
+    @Id
+    @GeneratedValue
+    private Long id;
+
+    /** 참여한 영웅 목록. */
+    @ManyToOne
+    private RankGame rankGame;
+
+}
+```
+
+나는 모든 경쟁전의 정보가 알고싶어서 findAll 을 불렀다.
+
+```java
+rankGameRepository.findAll();
+```
+
+여기서 예상되는 쿼리는 대충 이런 느낌이다.
+
+LEFT JOIN 은 기준이 되는 테이블 + 조인하려는 테이블과의 교집합 부분을 긁어올 수 있다.
+
+```sql
+SELECT * FROM RankGame
+LEFT JOIN Hero
+ON Hero.RankGame_id = RankGame.id
+```
+
+하지만 이런 무식한 쿼리가 나가게 된다.
+
+```sql
+SELECT * FROM RankGame;
+
+SELECT * FROM Hero WHERE RankGame_id = 0
+SELECT * FROM Hero WHERE RankGame_id = 1
+SELECT * FROM Hero WHERE RankGame_id = 2
+...
+```
+
+## 왜 무식한 쿼리가 나갈까
+
+JPA 에서 객체를 조회할 때 바로 sql 이 생성되는게 아니라 jpql(Java Persistence Query Language) 을 기반으로 생성하고 파싱하기 때문이다.
+
+```java
+SELECT R FROM RankGame;
+```
+
+그리고 이때는 글로벌 페치 전략을 참고하지 않는다. 즉 eager/ lazy 로딩 전략에 대해 전혀 신경쓰지 않는다.
+
+heroes 필드의 fetch type 을 eager 로 바꾸면 되지 않는 이유가 여기있다. 
+
+## Fetch Join 을 사용하자
+
+방법은 직접 조인을 어떻게 할지 명시하여 jpql 을 작성하는 것이다.
+
+이제 findAll 로 부르지 않고 조인을 명시해서 새로운 쿼리를 만들어보자.
+
+```java
+@Query("SELECT r FROM RankGame r LEFT JOIN FETCH r.heroes")
+```
