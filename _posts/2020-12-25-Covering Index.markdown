@@ -74,7 +74,7 @@ SELECT * FROM Hashtag WHERE name = '힐링'
 
 explain 으로 실행계획을 살펴보자
 
-![explain_no_index](./public/img/explain_no_index.png)
+![explain_no_index](/public/img/explain_no_index.png)
 
 `key` 에 인덱스가 쓰이긴 했지만 `Extra` 에 Using Index 등이 나오지 않는다.
 
@@ -87,7 +87,7 @@ SELECT name FROM Hashtag WHERE name = '힐링'
 ```
 해당 쿼리에 대한 explain 은 다음과 같다.
 
-![explain_index](./public/img/explain_index.png)
+![explain_index](/public/img/explain_index.png)
  
 짠 Using Index 라는 정보가 추가됐다.
 
